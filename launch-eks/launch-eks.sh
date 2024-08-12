@@ -3,7 +3,7 @@
 # AWS Credentials
 AWS_ACCESS_KEY="xxxx"                            # Replace with your AWS access key
 AWS_SECRET_KEY="xxxx"                            # Replace with your AWS secret key
-AWS_PROFILE="eksprofile"                         
+AWS_PROFILE="eksprofile"                                    # Name of the AWS profile to use
 
 
 
@@ -17,7 +17,7 @@ DESIRED_CAPACITY=1                                          # Desired capacity o
 INSTANCE_TYPE="t3.medium"                                   # EC2 instance type for the node group
 K8S_VERSION="1.29"                                          # Kubernetes version
 KEY_NAME="${EKS_CLUSTER_NAME}-myEksKeyPair"                 # Key pair name
-SECRET_NAME="${EKS_CLUSTER_NAME}-myEksKeyPair"              # Secret name for the key pair (Rename it for every run)
+SECRET_NAME="${EKS_CLUSTER_NAME}-myEksKeyPair-31"            # Secret name for the key pair
 OUTPUT_FILE="${EKS_CLUSTER_NAME}-key_pair_output.json"      # File to store key pair details
 VPC_STACK_NAME="${EKS_CLUSTER_NAME}-eks-vpc-stack"          # CloudFormation stack name for VPC
 CLUSTER_ROLE_NAME="eksClusterRole"                          # IAM role name for EKS cluster
@@ -201,13 +201,52 @@ create_node_group() {
                     ParameterKey=Subnets,ParameterValue=\"$SUBNET_IDS_CSV\"
 
     echo "Waiting for Node Group stack creation to complete..."
-    aws cloudformation wait stack-create-complete --profile $AWS_PROFILE --region $REGION --stack-name $NODE_GROUP_STACK_NAME
-    echo "Node Group created successfully."
+    aws cloudformation wait stack-create-complete --region $REGION --stack-name $NODE_GROUP_STACK_NAME --profile $AWS_PROFILE
+
+    echo "EKS Node Group created successfully."
 }
 
-# Main Execution Flow
+# Function to attach NodeInstanceRole to aws-auth ConfigMap
+attach_nodegroup_to_cluster() {
+    echo "Attaching Node Group to EKS Cluster..."
+
+    # Get the NodeInstanceRole from CloudFormation stack outputs
+    NODE_INSTANCE_ROLE=$(aws cloudformation describe-stacks --region $REGION --stack-name $NODE_GROUP_STACK_NAME --query "Stacks[0].Outputs[?OutputKey=='NodeInstanceRole'].OutputValue" --output text --profile $AWS_PROFILE)
+
+    if [ -z "$NODE_INSTANCE_ROLE" ]; then
+        echo "Error: Could not retrieve NodeInstanceRole."
+        exit 1
+    fi
+
+    echo "Retrieved NodeInstanceRole: $NODE_INSTANCE_ROLE"
+
+    # Create aws-auth ConfigMap to attach the Node Group
+    cat <<EOF > aws-auth-patch.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-auth
+  namespace: kube-system
+data:
+  mapRoles: |
+    - rolearn: $NODE_INSTANCE_ROLE
+      username: system:node:{{EC2PrivateDNSName}}
+      groups:
+        - system:bootstrappers
+        - system:nodes
+EOF
+
+    kubectl apply -f aws-auth-patch.yaml
+
+    echo "Node Group successfully attached to the EKS Cluster."
+}
+
+# Main Script Execution
 create_vpc_and_networks
 create_eks_cluster_role
 create_eks_cluster
 create_key_pair_and_store
 create_node_group
+attach_nodegroup_to_cluster
+
+echo "EKS cluster setup and node group attachment completed successfully."
