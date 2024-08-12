@@ -212,6 +212,8 @@ create_node_group() {
 
 # Function to attach NodeInstanceRole to aws-auth ConfigMap
 attach_nodegroup_to_cluster() {
+
+	aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $REGION --profile $AWS_PROFILE
     echo "Attaching Node Group to EKS Cluster..."
 
     # Get the NodeInstanceRole from CloudFormation stack outputs
