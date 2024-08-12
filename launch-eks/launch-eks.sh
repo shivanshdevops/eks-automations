@@ -1,5 +1,9 @@
 #!/bin/bash
 
+#AUTHOR: SHIVANSH SARASWAT
+#GITHUB: https://github.com/shivanshdevops
+
+
 # AWS Credentials
 AWS_ACCESS_KEY="xxxx"                            # Replace with your AWS access key
 AWS_SECRET_KEY="xxxx"                            # Replace with your AWS secret key
